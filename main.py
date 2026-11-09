@@ -8,7 +8,7 @@ import traceback
 import os
 import datetime
 
-VERSION = "v0.1.3"
+VERSION = "v0.1.4"
 LISTEN_PORT = 11451
 TARGET_PORT = 11452
 TARGET_IP = "127.0.0.1"
@@ -33,7 +33,6 @@ sys_status = {
 # ================= 防呆：如果开发者直接运行 main =================
 if len(sys.argv) == 1:
     print("检测到直接运行 main，正在为你启动总控台 (run)...")
-    # 如果是EXE环境找run.exe，如果是源码环境找run.py
     if IS_FROZEN and os.path.exists("run.exe"):
         subprocess.Popen(["run.exe"], creationflags=subprocess.CREATE_NEW_CONSOLE if platform.system() == "Windows" else 0)
     elif not IS_FROZEN and os.path.exists("run.py"):
@@ -88,58 +87,69 @@ elif len(sys.argv) > 1 and sys.argv[1] == "--main-window":
         sys_status['progress'] = 30
         sys_status['need_redraw'] = True
         
+        success = False
+        global TARGET_IP
+
         for i in range(30, 0, -1):
+            # 随时检测空格打断
             if sys_status['detect_target'] != target or not sys_status['running']:
                 write_log(f"[DETECT] 用户中途打断了对 {target} 的检测。")
+                sys_status['detect_target'] = None
                 return
+            
+            # 每一秒都实际查一次
+            if target == "radmin":
+                try:
+                    result = subprocess.run(['ipconfig'], capture_output=True, text=True, encoding='gbk', errors='ignore')
+                    lines = result.stdout.split('\n')
+                    in_radmin = False
+                    for line in lines:
+                        if "Radmin VPN" in line:
+                            in_radmin = True
+                        elif in_radmin and "IPv4" in line:
+                            TARGET_IP = line.split(':')[-1].strip()
+                            sys_status['radmin'] = f"运行中 ({TARGET_IP})"
+                            sys_status['fatal_error'] = False
+                            sys_status['action_msg'] = "小蓝盾环境检测成功！"
+                            write_log(f"[SUCCESS] 小蓝盾检测成功！分配 IP: {TARGET_IP}")
+                            success = True
+                            break
+                        elif in_radmin and "适配器" in line and "Radmin VPN" not in line:
+                            in_radmin = False
+                except Exception as e:
+                    write_log(f"[ERROR] 小蓝盾检测异常: {e}")
+                
+                if success:
+                    break # 找到了直接终结倒计时
+                    
+            elif target == "hardware":
+                if sys_status['hardware'] != "暂时无法连接至硬件":
+                    sys_status['action_msg'] = "硬件连接状态正常。"
+                    write_log("[SUCCESS] 硬件状态检测正常，有数据包正在传输。")
+                    success = True
+                    break # 找到了直接终结倒计时
+
             sys_status['progress'] = i
             sys_status['need_redraw'] = True
             time.sleep(1.0)
             
         if sys_status['detect_target'] != target:
             return
-
+            
         sys_status['detect_target'] = None
-        write_log(f"[DETECT] 倒计时结束，开始执行真实环境扫描: {target}")
         
-        if target == "radmin":
-            global TARGET_IP
-            try:
-                result = subprocess.run(['ipconfig'], capture_output=True, text=True, encoding='gbk', errors='ignore')
-                lines = result.stdout.split('\n')
-                in_radmin = False
-                for line in lines:
-                    if "Radmin VPN" in line:
-                        in_radmin = True
-                    elif in_radmin and "IPv4" in line:
-                        TARGET_IP = line.split(':')[-1].strip()
-                        sys_status['radmin'] = f"运行中 ({TARGET_IP})"
-                        sys_status['fatal_error'] = False
-                        sys_status['action_msg'] = "小蓝盾环境检测成功！"
-                        write_log(f"[SUCCESS] 小蓝盾检测成功！分配 IP: {TARGET_IP}")
-                        sys_status['need_redraw'] = True
-                        return
-                    elif in_radmin and "适配器" in line and "Radmin VPN" not in line:
-                        in_radmin = False
-                        
+        if not success:
+            if target == "radmin":
                 sys_status['radmin'] = "未检测到运行"
                 sys_status['fatal_error'] = True
                 sys_status['fatal_msg'] = "无法识别小蓝盾运行状态！请确认已打开软件并加入了网络。"
                 sys_status['action_msg'] = "小蓝盾检测失败，请排查。"
                 write_log("[ERROR] 小蓝盾检测失败！未在 ipconfig 中找到 Radmin VPN 网卡。")
-                sys_status['need_redraw'] = True
-            except Exception as e:
-                write_log(f"[ERROR] 小蓝盾检测过程发生异常: {e}")
-
-        elif target == "hardware":
-            write_log("[DETECT] 正在检查 ESP32 硬件连接状态...")
-            if sys_status['hardware'] == "暂时无法连接至硬件":
+            elif target == "hardware":
                 sys_status['action_msg'] = "硬件连接失败：未检测到设备插入。"
                 write_log("[ERROR] 硬件检测失败：UDP 端口未收到任何数据包。")
-            else:
-                sys_status['action_msg'] = "硬件连接状态正常。"
-                write_log("[SUCCESS] 硬件状态检测正常，有数据包正在传输。")
-            sys_status['need_redraw'] = True
+                
+        sys_status['need_redraw'] = True
 
     def draw_ui():
         sys.stdout.write("\033[H")

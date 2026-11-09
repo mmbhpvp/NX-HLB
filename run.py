@@ -5,7 +5,7 @@ import time
 import datetime
 import platform
 
-VERSION = "v0.1.3"
+VERSION = "v0.1.4"
 
 # 判断当前是否处于打包后的 EXE 环境
 IS_FROZEN = getattr(sys, 'frozen', False)
@@ -46,7 +46,7 @@ def main():
                 exit_code = main_proc.returncode
                 if exit_code != 0:
                     log_proc.terminate()
-                    os.system("title ⚠️ NX-HLB 崩溃报告 ⚠️")
+                    os.system("title  NX-HLB 崩溃报告 ")
                     os.system("color 0C")
                     print("\n" * 2)
                     print("=" * 60)
